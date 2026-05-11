@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+  configure)
+    SCRIPT="/usr/share/@PROJECT_NAME@/scripts/udev/install_usb_driver.sh"
+    if [ -x "$SCRIPT" ]; then
+      "$SCRIPT"
+    else
+      echo "Warning: USB install script not found or not executable: $SCRIPT"
+    fi
+    ;;
+esac
+
+exit 0

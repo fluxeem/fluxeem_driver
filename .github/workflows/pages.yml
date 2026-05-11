@@ -1,0 +1,84 @@
+name: Deploy Docs Site
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - docs/**
+      - include/**
+      - src/**
+      - cmake/**
+      - CMakeLists.txt
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install doc build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            doxygen \
+            graphviz \
+            pkg-config \
+            libusb-1.0-0-dev
+
+      - name: Prepare doxygen-awesome-css
+        run: |
+          mkdir -p .deps
+          git clone --depth=1 https://github.com/jothepro/doxygen-awesome-css.git .deps/doxygen-awesome-css
+
+      - name: Configure docs build
+        run: |
+          cmake -S . -B build-docs \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SAMPLES=OFF \
+            -DBUILD_TESTING=OFF \
+            -DGENERATE_DOCS=ON \
+            -DDOXYGEN_AWESOME_DIR=${GITHUB_WORKSPACE}/.deps/doxygen-awesome-css
+
+      - name: Generate docs
+        run: cmake --build build-docs --target docs --parallel
+
+      - name: Prepare Pages artifact
+        run: |
+          if [ ! -f build-docs/docs/html/index.html ]; then
+            echo "Error: Doxygen output not found at build-docs/docs/html/index.html"
+            exit 1
+          fi
+          touch build-docs/docs/html/.nojekyll
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build-docs/docs/html
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

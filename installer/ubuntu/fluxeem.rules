@@ -1,0 +1,17 @@
+# Fluxeem USB event camera udev rules
+# Allows non-root access to supported devices.
+
+# EVK4  (Cypress VID_04B4 / PID_00F5)
+SUBSYSTEM=="usb", ATTR{idVendor}=="04b4", ATTR{idProduct}=="00f5", MODE="0666"
+
+# EVK5 / SENSING_USB3_EVS_CAMERA  (Cypress VID_04B4 / PID_00C4)
+SUBSYSTEM=="usb", ATTR{idVendor}=="04b4", ATTR{idProduct}=="00c4", MODE="0666"
+
+# RDK3  (Cypress VID_04B4 / PID_00F4)
+SUBSYSTEM=="usb", ATTR{idVendor}=="04b4", ATTR{idProduct}=="00f4", MODE="0666"
+
+# DVSLume  (ROHM VID_04B5 / PID_0001)
+SUBSYSTEM=="usb", ATTR{idVendor}=="04b5", ATTR{idProduct}=="0001", MODE="0666"
+
+# ApexVision-S1  (Cypress VID_04B4 / PID_0101)
+SUBSYSTEM=="usb", ATTR{idVendor}=="04b4", ATTR{idProduct}=="0101", MODE="0666"

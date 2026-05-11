@@ -1,0 +1,8 @@
+@PACKAGE_INIT@
+
+# LibUSB is a PRIVATE dependency of fluxeem_driver (shared library),
+# so downstream consumers do NOT need to find it.
+
+include("${CMAKE_CURRENT_LIST_DIR}/fluxeem_driverTargets.cmake")
+
+check_required_components(fluxeem_driver)

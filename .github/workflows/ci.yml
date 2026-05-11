@@ -1,0 +1,214 @@
+name: Build and Package
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish_to_release:
+        description: "Upload all artifacts to GitHub Release"
+        required: false
+        type: boolean
+        default: false
+      release_tag:
+        description: "Release tag (used when manually publishing)"
+        required: false
+        type: string
+      release_name:
+        description: "Release display name (optional)"
+        required: false
+        type: string
+      release_prerelease:
+        description: "Mark release as prerelease"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build_linux:
+    name: ubuntu-${{ matrix.ubuntu }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu:
+          - "20.04"
+          - "22.04"
+          - "24.04"
+    container:
+      image: ubuntu:${{ matrix.ubuntu }}
+    env:
+      BUILD_DIR: build
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libusb-1.0-0-dev \
+            libopencv-dev \
+            dpkg-dev \
+            file \
+            ca-certificates \
+            git
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Configure (Release, BUILD_SAMPLES=ON)
+        run: |
+          cmake -S . -B "$BUILD_DIR" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SAMPLES=ON \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/$BUILD_DIR/install"
+
+      - name: Build (Release, BUILD_SAMPLES=ON)
+        run: cmake --build "$BUILD_DIR" --parallel
+
+      - name: Install (Release, BUILD_SAMPLES=ON)
+        run: cmake --install "$BUILD_DIR"
+
+      - name: Package DEB
+        run: |
+          cd "$BUILD_DIR"
+          cpack -G DEB
+
+      - name: Upload DEB artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxeem-driver-deb-ubuntu-${{ matrix.ubuntu }}
+          path: ${{ env.BUILD_DIR }}/*.deb
+          if-no-files-found: error
+          retention-days: 7
+
+  build_windows:
+    name: windows-nsis
+    runs-on: windows-latest
+    env:
+      BUILD_DIR: build
+      VCPKG_ROOT: ${{ github.workspace }}\\vcpkg
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          git clone https://github.com/microsoft/vcpkg "$env:VCPKG_ROOT"
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
+          "VCPKG_ROOT=$env:VCPKG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install vcpkg dependencies
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_ROOT\vcpkg.exe" install libusb:x64-windows opencv:x64-windows
+
+      - name: Configure (Release, BUILD_SAMPLES=ON)
+        shell: pwsh
+        run: |
+          cmake -S . -B "$env:BUILD_DIR" -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release -DBUILD_SAMPLES=ON
+
+      - name: Build (Release, BUILD_SAMPLES=ON)
+        shell: pwsh
+        run: cmake --build "$env:BUILD_DIR" --config Release --parallel
+
+      - name: Install (Release, BUILD_SAMPLES=ON)
+        shell: pwsh
+        run: cmake --install "$env:BUILD_DIR" --config Release
+
+      - name: Package NSIS installer
+        shell: pwsh
+        run: |
+          Push-Location "$env:BUILD_DIR"
+          cpack -C Release -G NSIS
+          Pop-Location
+
+      - name: Upload Windows installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxeem-driver-nsis-windows
+          path: |
+            ${{ env.BUILD_DIR }}/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  publish_release:
+    name: publish-release
+    runs-on: ubuntu-latest
+    needs:
+      - build_linux
+      - build_windows
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish_to_release)
+    env:
+      INPUT_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || '' }}
+      INPUT_RELEASE_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.release_name || '' }}
+      INPUT_RELEASE_PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_prerelease || false }}
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f \( -name "*.deb" -o -name "*.exe" \) -exec cp {} release-assets/ \;
+          ls -lah release-assets
+
+      - name: Resolve release metadata
+        id: release_meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          elif [[ -n "${INPUT_RELEASE_TAG}" ]]; then
+            TAG="${INPUT_RELEASE_TAG}"
+          else
+            TAG="manual-${GITHUB_RUN_NUMBER}"
+          fi
+
+          if [[ -n "${INPUT_RELEASE_NAME}" ]]; then
+            NAME="${INPUT_RELEASE_NAME}"
+          else
+            NAME="Fluxeem Driver ${TAG}"
+          fi
+
+          if [[ "${INPUT_RELEASE_PRERELEASE}" == "true" ]]; then
+            PRERELEASE="true"
+          else
+            PRERELEASE="false"
+          fi
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          name: ${{ steps.release_meta.outputs.name }}
+          generate_release_notes: true
+          prerelease: ${{ steps.release_meta.outputs.prerelease == 'true' }}
+          files: |
+            release-assets/*
+          fail_on_unmatched_files: true
