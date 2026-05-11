@@ -1,0 +1,300 @@
+# SPDX-FileCopyrightText: 2024-present Fluxeem Technologies Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+name: Build and Package
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish_to_release:
+        description: "Upload all artifacts to GitHub Release"
+        required: false
+        type: boolean
+        default: false
+      release_tag:
+        description: "Release tag (used when manually publishing)"
+        required: false
+        type: string
+      release_name:
+        description: "Release display name (optional)"
+        required: false
+        type: string
+      release_prerelease:
+        description: "Mark release as prerelease"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write  # 发布 Release / 上传 artifact
+  actions: write   # 触发 apt-repo.yml
+
+jobs:
+  build_linux:
+    # Build once on Ubuntu 20.04 (glibc 2.31). The resulting binaries run on
+    # Ubuntu 20/22/24, Debian 11/12, Mint, Pop!_OS and any distro with glibc >= 2.31.
+    # OpenCV shared libraries are bundled into /opt/fluxeem/lib so sample executables
+    # work immediately without requiring any system-installed OpenCV package.
+    name: linux-amd64-deb
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
+    env:
+      BUILD_DIR: build
+      DEBIAN_FRONTEND: noninteractive
+      INSTALL_DIR: ${{ github.workspace }}/build/install
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libusb-1.0-0-dev \
+            libopencv-dev \
+            dpkg-dev \
+            file \
+            ca-certificates \
+            git
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake -S . -B "$BUILD_DIR" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SAMPLES=ON \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/$BUILD_DIR/install"
+
+      - name: Build
+        run: cmake --build "$BUILD_DIR" --parallel
+
+      - name: Install
+        run: cmake --install "$BUILD_DIR"
+
+      - name: Bundle OpenCV shared libraries
+        run: |
+          BUNDLE_LIB="$GITHUB_WORKSPACE/$BUILD_DIR/install/opt/fluxeem/lib"
+          SAMPLE_BIN="$GITHUB_WORKSPACE/$BUILD_DIR/install/opt/fluxeem/bin"
+          mkdir -p "$BUNDLE_LIB"
+
+          # Copy every versioned OpenCV .so that the sample executables actually load.
+          # ldd prints the resolved on-disk path (e.g. /usr/lib/x86_64-linux-gnu/libopencv_core.so.4.2).
+          if [ -d "$SAMPLE_BIN" ]; then
+            find "$SAMPLE_BIN" -maxdepth 1 -type f | while read exe; do
+              ldd "$exe" 2>/dev/null \
+                | awk '/libopencv/{print $3}' \
+                | grep "^/" \
+                | sort -u \
+                | while read lib; do
+                    cp -n "$lib" "$BUNDLE_LIB/" 2>/dev/null || true
+                  done
+            done
+          fi
+
+          echo "Bundled OpenCV libs:"
+          ls -lh "$BUNDLE_LIB/" || echo "(none)"
+
+      - name: Package DEB
+        run: |
+          cd "$BUILD_DIR"
+          cpack -G DEB
+
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxeem-driver-deb-linux-amd64
+          path: ${{ env.BUILD_DIR }}/*.deb
+          if-no-files-found: error
+          retention-days: 7
+
+  build_windows:
+    name: windows-nsis
+    runs-on: windows-latest
+    env:
+      BUILD_DIR: build
+      VCPKG_ROOT: ${{ github.workspace }}\\vcpkg
+      VCPKG_COMMIT: "b02e341c927f16d991edbd915d8ea43eac52096a"
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL',     process.env.ACTIONS_CACHE_URL     || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Cache vcpkg
+        id: vcpkg-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_ROOT }}
+          key: vcpkg-${{ runner.os }}-${{ env.VCPKG_COMMIT }}-libusb-opencv
+
+      - name: Bootstrap vcpkg
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          git clone https://github.com/microsoft/vcpkg "$env:VCPKG_ROOT" --no-tags
+          git -C "$env:VCPKG_ROOT" checkout "$env:VCPKG_COMMIT"
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+          "VCPKG_ROOT=$env:VCPKG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install vcpkg dependencies
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        env:
+          VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+        run: |
+          & "$env:VCPKG_ROOT\vcpkg.exe" install libusb:x64-windows opencv:x64-windows --no-print-usage
+
+      - name: Configure (Release, BUILD_SAMPLES=ON)
+        shell: pwsh
+        run: |
+          cmake -S . -B "$env:BUILD_DIR" -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release -DBUILD_SAMPLES=ON
+
+      - name: Build (Release, BUILD_SAMPLES=ON)
+        shell: pwsh
+        run: cmake --build "$env:BUILD_DIR" --config Release --parallel
+
+      - name: Install (Release, BUILD_SAMPLES=ON)
+        shell: pwsh
+        run: cmake --install "$env:BUILD_DIR" --config Release
+
+      - name: Package NSIS installer
+        shell: pwsh
+        run: |
+          Push-Location "$env:BUILD_DIR"
+          cpack -C Release -G NSIS
+          Pop-Location
+
+      - name: Upload Windows installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxeem-driver-nsis-windows
+          path: |
+            ${{ env.BUILD_DIR }}/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  # ── Linux 发布：build_linux 完成后立刻上传 DEB 并触发 APT，不等待 Windows ──
+  publish_linux_release:
+    name: publish-linux-release
+    runs-on: ubuntu-latest
+    needs: [build_linux]
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish_to_release)
+    outputs:
+      tag: ${{ steps.release_meta.outputs.tag }}
+    env:
+      INPUT_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || '' }}
+      INPUT_RELEASE_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.release_name || '' }}
+      INPUT_RELEASE_PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_prerelease || false }}
+
+    steps:
+      - name: Download DEB artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fluxeem-driver-deb-linux-amd64
+          path: release-assets
+
+      - name: Resolve release metadata
+        id: release_meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          elif [[ -n "${INPUT_RELEASE_TAG}" ]]; then
+            TAG="${INPUT_RELEASE_TAG}"
+          else
+            TAG="manual-${GITHUB_RUN_NUMBER}"
+          fi
+
+          if [[ -n "${INPUT_RELEASE_NAME}" ]]; then
+            NAME="${INPUT_RELEASE_NAME}"
+          else
+            NAME="Fluxeem Driver ${TAG}"
+          fi
+
+          if [[ "${INPUT_RELEASE_PRERELEASE}" == "true" ]]; then
+            PRERELEASE="true"
+          else
+            PRERELEASE="false"
+          fi
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release (Linux DEB)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          name: ${{ steps.release_meta.outputs.name }}
+          generate_release_notes: true
+          prerelease: ${{ steps.release_meta.outputs.prerelease == 'true' }}
+          files: release-assets/*
+          fail_on_unmatched_files: true
+
+      - name: Trigger APT repository update
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # GITHUB_TOKEN 创建的 Release 不会自动触发 release: published 事件，
+          # 因此需要在这里手动触发 apt-repo.yml。
+          # tag push 与 branch push 几乎同时发生，GitHub Actions 索引器可能尚未
+          # 处理完新的 workflow_dispatch 触发器，等待后重试可规避 HTTP 422。
+          TAG="${{ steps.release_meta.outputs.tag }}"
+          MAX_ATTEMPTS=5
+          WAIT=10
+          for attempt in $(seq 1 $MAX_ATTEMPTS); do
+            echo "Attempt $attempt/$MAX_ATTEMPTS: dispatching apt-repo.yml for tag $TAG"
+            if gh workflow run apt-repo.yml \
+              --repo ${{ github.repository }} \
+              --ref main \
+              --field tag="$TAG" 2>&1; then
+              echo "apt-repo.yml triggered successfully for tag $TAG"
+              exit 0
+            fi
+            if [[ $attempt -lt $MAX_ATTEMPTS ]]; then
+              echo "Dispatch failed, retrying in ${WAIT}s..."
+              sleep $WAIT
+              WAIT=$((WAIT * 2))
+            fi
+          done
+          echo "::warning title=APT trigger skipped::All $MAX_ATTEMPTS dispatch attempts failed. Run manually: gh workflow run apt-repo.yml --repo ${{ github.repository }} --ref main --field tag=$TAG"
+
+  # ── Windows 发布：Windows 构建完成且 Release 已创建后，追加 EXE ────────────
+  publish_windows_release:
+    name: publish-windows-release
+    runs-on: ubuntu-latest
+    needs: [build_windows, publish_linux_release]
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish_to_release)
+
+    steps:
+      - name: Download Windows installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fluxeem-driver-nsis-windows
+          path: release-assets
+
+      - name: Add Windows installer to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.publish_linux_release.outputs.tag }}
+          files: release-assets/*
+          fail_on_unmatched_files: true

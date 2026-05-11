@@ -1,0 +1,160 @@
+# 快速开始 {#quickstart}
+
+@brief 面向 SDK 二次开发的准备与首次验证
+
+本教程介绍如何在 Windows 或 Linux 环境下完成设备准备、SDK 安装和首次运行验证。
+
+- 电脑环境满足运行条件
+- 相机连接方式正确
+- SDK 已正确安装
+- SDK 自带示例程序能够正常运行
+
+## 相机与事件数据
+
+事件相机是一类基于亮度变化驱动的数据采集设备，其输出形式与传统基于曝光的帧式相机有本质差异。
+
+传统相机以固定帧率周期性输出完整图像，而事件相机仅在像素感知到局部亮度变化超过阈值时，才异步产生事件并立即上报。因此，事件流并不是按帧组织的二维图像序列，而是一组严格按照时间顺序到达的稀疏时空数据。
+
+单个事件通常包含以下核心信息：
+
+- 像素位置 `x`、`y`
+- 高精度时间戳 `timestamp`
+- 亮度变化方向 `polarity`
+
+这种输出机制使事件相机在高速运动、低延迟感知、高动态范围场景下具有明显优势，尤其适用于机器人感知、工业检测、运动目标捕获、光流估计、SLAM、目标跟踪以及其他对时序响应要求较高的应用。
+
+与帧式图像相比，事件数据具有以下典型工程特征：
+
+- 高时间分辨率，适合快速运动场景
+- 稀疏性强，能够降低无效数据传输与处理负担
+- 异步输出，天然适合实时处理链路
+- 对高动态范围和复杂光照变化场景更具鲁棒性
+
+在 Fluxeem Driver 中，事件数据既可以通过同步接口按批次读取，也可以通过回调机制直接接入上层处理逻辑，从而满足实时采集、在线显示、数据记录和离线分析等不同类型的开发需求。
+
+## 1. 电脑准备
+
+Fluxeem Driver SDK 支持在以下系统中进行二次开发：
+
+- Windows
+- Linux
+
+建议使用具有 USB 3.0 及以上接口的主机，并保证系统具备正常的图形界面和文件读写权限，以便运行 SDK 自带的示例程序和可视化工具。
+
+## 2. 相机准备
+
+在连接相机之前，请确认以下事项：
+
+- 使用质量可靠的 USB 3.0 数据线
+- 将相机直接连接到主机的 USB 3.0 接口
+- 尽量避免通过低质量扩展坞、转接器或无供电 Hub 连接
+- 相机连接后应处于稳定供电状态
+
+对于事件相机，USB 链路质量会直接影响设备识别和数据传输稳定性。如果连接在 USB 2.0 接口或链路质量较差的通道上，可能出现以下问题：
+
+- 无法枚举到设备
+- 相机可以识别但无法正常启动
+- 数据流不稳定，出现丢包或显示异常
+
+因此，在首次接入时，建议优先使用主板原生 USB 3.0 接口进行验证。
+
+
+## 3. SDK 安装
+
+### Linux（Debian / Ubuntu）——APT 仓库安装（推荐）
+
+```bash
+# 1. 导入仓库签名公钥
+curl -fsSL https://fluxeem.github.io/fluxeem_driver/apt/KEY.gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/fluxeem.gpg
+
+# 2. 添加 APT 源
+echo "deb [signed-by=/usr/share/keyrings/fluxeem.gpg] \
+  https://fluxeem.github.io/fluxeem_driver/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/fluxeem.list
+
+# 3. 安装
+sudo apt update && sudo apt install fluxeem-driver
+```
+
+支持 Ubuntu 20.04 / 22.04 / 24.04、Debian 11 / 12 及其他 Debian 系发行版（amd64）。
+后续升级只需：
+
+```bash
+sudo apt upgrade fluxeem-driver
+```
+
+### Linux——直接下载 `.deb`
+
+从 [GitHub Releases](https://github.com/fluxeem/fluxeem_driver/releases) 下载最新 `.deb` 包，手动安装：
+
+```bash
+sudo apt install ./fluxeem-driver*.deb
+```
+
+### Windows
+
+从 [GitHub Releases](https://github.com/fluxeem/fluxeem_driver/releases) 下载最新 `.exe` 安装包，按向导完成安装即可。
+
+---
+
+安装完成后包含以下内容：
+
+| 内容 | Linux 路径 | Windows 路径 |
+| --- | --- | --- |
+| 示例程序 | `/opt/fluxeem/bin/` | `%PROGRAMFILES%\fluxeem_driver\bin\` |
+| SDK 头文件 | `/usr/include/fluxeem/` | `<安装目录>\include\fluxeem\` |
+| 库文件 | `/usr/lib/libfluxeem_driver.so` | `<安装目录>\lib\fluxeem_driver.lib` |
+| OpenCV 运行库 | `/opt/fluxeem/lib/` | 已打包到 `bin\` |
+
+安装包会自动配置所需依赖（Linux 下的 udev 规则等）。
+
+## 4. 首次运行验证
+
+完成安装后，建议首先运行 SDK 示例程序，对设备连接和 SDK 环境进行快速检查。
+
+推荐验证步骤如下：
+
+### 4.1 运行相机示例
+
+在相机已经正确连接的前提下，运行 Live Viewer：
+
+```text
+# Linux
+/opt/fluxeem/bin/fluxeem_live_viewer
+
+# Windows
+<SDK_INSTALL_DIR>\bin\fluxeem_live_viewer.exe
+```
+
+如果程序能够识别相机并正常显示事件图像，通常说明：
+
+- 相机连接正确
+- USB 传输链路正常
+- SDK 与相机通信正常
+- 基本运行环境无误
+
+## 5. 首次验证建议
+
+建议按照以下顺序进行首次检查：
+
+1. 安装 SDK
+2. 连接相机到 USB 3.0 接口
+3. 运行基础日志示例
+4. 运行 `fluxeem_live_viewer`
+5. 确认能够稳定识别并显示相机数据
+
+## 6. 常见检查项
+
+如果首次验证失败，请优先检查：
+
+- 相机是否连接在 USB 3.0 接口
+- USB 线缆是否支持高速数据传输
+- 是否存在其他程序占用相机
+- SDK 安装目录下的运行库是否完整
+- Linux 环境下是否具备访问 USB 设备的权限
+
+## 下一步
+
+- @ref camera_discovery "进入设备发现与环境验证教程"
+- @ref live_viewer "学习 fluxeem_live_viewer 示例程序"

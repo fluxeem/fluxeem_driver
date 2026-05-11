@@ -1,0 +1,273 @@
+# SPDX-FileCopyrightText: 2024-present Fluxeem Technologies Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+name: Update APT Repository
+
+# Triggered automatically when a GitHub Release is published,
+# or manually to (re-)add packages for a specific tag.
+#
+# REQUIRED SECRETS (Settings -> Secrets and variables -> Actions):
+#   APT_SIGNING_KEY   - ASCII-armored GPG private key used to sign the repo.
+#
+# One-time setup:
+#   # Generate a signing key (no passphrase so CI can sign unattended)
+#   gpg --batch --gen-key <<EOF
+#   Key-Type: RSA
+#   Key-Length: 4096
+#   Subkey-Type: RSA
+#   Subkey-Length: 4096
+#   Name-Real: Fluxeem Driver APT
+#   Name-Email: apt@fluxeem.com
+#   Expire-Date: 0
+#   %no-protection
+#   %commit
+#   EOF
+#
+#   # Export and add to GitHub Secrets as APT_SIGNING_KEY
+#   gpg --armor --export-secret-keys apt@fluxeem.com
+#
+# After the first run the apt-repo branch is created automatically.
+# Users install with:
+#   curl -fsSL https://<org>.github.io/<repo>/apt/KEY.gpg \
+#     | sudo gpg --dearmor -o /usr/share/keyrings/fluxeem.gpg
+#   echo "deb [signed-by=/usr/share/keyrings/fluxeem.gpg] \
+#     https://<org>.github.io/<repo>/apt stable main" \
+#     | sudo tee /etc/apt/sources.list.d/fluxeem.list
+#   sudo apt update && sudo apt install fluxeem-driver
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (empty = use event tag or latest)"
+        required: false
+        type: string
+
+permissions:
+  contents: write   # push apt-repo branch
+  actions: write    # trigger pages.yml rebuild
+
+jobs:
+  update-apt-repo:
+    runs-on: ubuntu-latest
+    env:
+      REPO_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+
+    steps:
+      - name: Validate APT_SIGNING_KEY secret
+        run: |
+          if [[ -z "${{ secrets.APT_SIGNING_KEY }}" ]]; then
+            echo "::error title=Missing Secret::APT_SIGNING_KEY is not configured."
+            echo ""
+            echo "One-time setup - run locally then add the output as a GitHub Secret:"
+            echo ""
+            echo "  gpg --batch --gen-key <<'GENEOF'"
+            echo "  Key-Type: RSA"
+            echo "  Key-Length: 4096"
+            echo "  Subkey-Type: RSA"
+            echo "  Subkey-Length: 4096"
+            echo "  Name-Real: Fluxeem Driver APT"
+            echo "  Name-Email: apt@fluxeem.com"
+            echo "  Expire-Date: 0"
+            echo "  %no-protection"
+            echo "  %commit"
+            echo "  GENEOF"
+            echo ""
+            echo "  gpg --armor --export-secret-keys apt@fluxeem.com"
+            echo ""
+            echo "Then: GitHub repo -> Settings -> Secrets and variables -> Actions"
+            echo "  -> New repository secret -> Name: APT_SIGNING_KEY -> paste output above"
+            exit 1
+          fi
+          echo "APT_SIGNING_KEY secret is present."
+
+      - name: Install reprepro and gnupg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends reprepro gnupg dpkg-dev
+
+      - name: Import GPG signing key
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          # --- diagnostics (safe: only reveals header, not key material) ---
+          KEY_LEN=${#APT_SIGNING_KEY}
+          echo "APT_SIGNING_KEY length: ${KEY_LEN} chars"
+          # Show first 45 chars – should be "-----BEGIN PGP PRIVATE KEY BLOCK-----"
+          echo "Key prefix : $(printf '%s' "$APT_SIGNING_KEY" | head -c 45)"
+
+          # Write to temp file; strip \r (CRLF from Windows export) so GPG accepts the armor
+          KEY_FILE=$(mktemp)
+          chmod 600 "$KEY_FILE"
+          printf '%s' "$APT_SIGNING_KEY" | tr -d '\r' > "$KEY_FILE"
+          gpg --batch --import "$KEY_FILE"
+          rm -f "$KEY_FILE"
+
+          # Fully trust the imported key so reprepro can use it without prompts
+          KEY_FP=$(gpg --list-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+          if [[ -z "$KEY_FP" ]]; then
+            echo "::error::GPG key import failed. Check the diagnostics above."
+            exit 1
+          fi
+          echo "${KEY_FP}:6:" | gpg --import-ownertrust
+          echo "Imported key fingerprint: ${KEY_FP}"
+
+      - name: Checkout or initialise apt-repo branch
+        run: |
+          if git ls-remote --exit-code --heads "$REPO_URL" apt-repo 2>/dev/null; then
+            git clone --depth=1 --branch=apt-repo "$REPO_URL" apt-repo
+          else
+            echo "apt-repo branch does not exist yet - creating orphan branch"
+            mkdir apt-repo
+            cd apt-repo
+            git init
+            git remote add origin "$REPO_URL"
+            git checkout -b apt-repo
+          fi
+
+      - name: Write reprepro configuration (first run only)
+        run: |
+          mkdir -p apt-repo/conf
+          if [ ! -f apt-repo/conf/distributions ]; then
+            KEY_FP=$(gpg --list-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+            cat > apt-repo/conf/distributions << EOF
+          Origin: Fluxeem
+          Label: Fluxeem Driver
+          Codename: stable
+          Architectures: amd64
+          Components: main
+          Description: Fluxeem event camera driver SDK - https://github.com/${{ github.repository }}
+          SignWith: ${KEY_FP}
+          EOF
+            echo "reprepro distributions config written."
+          else
+            echo "reprepro config already exists, skipping."
+          fi
+
+      - name: Determine release tag
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ inputs.tag }}"
+          [[ -z "$TAG" ]] && TAG="${{ github.event.release.tag_name }}"
+          if [[ -z "$TAG" ]]; then
+            echo "::error::No release tag specified. Provide tag via release event or the 'tag' workflow_dispatch input."
+            echo "Hint: gh workflow run apt-repo.yml --repo ${{ github.repository }} --ref main --field tag=<YOUR_TAG>"
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Publishing packages for tag: ${TAG}"
+
+      - name: Download .deb packages from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p deb-files
+          gh release download "${{ steps.meta.outputs.tag }}" \
+            --repo ${{ github.repository }} \
+            --pattern "*.deb" \
+            --dir deb-files || true
+          # Verify that at least one .deb was downloaded
+          shopt -s nullglob
+          DEBS=( deb-files/*.deb )
+          if [[ ${#DEBS[@]} -eq 0 ]]; then
+            echo "::error::No .deb files found in release ${{ steps.meta.outputs.tag }}."
+            echo "Possible causes:"
+            echo "  1. The Linux build (ci.yml) has not finished yet for this tag."
+            echo "  2. The release was created but the DEB asset was not uploaded."
+            echo "  3. The tag does not have an associated GitHub Release."
+            exit 1
+          fi
+          ls -lh deb-files/
+
+      - name: Add packages to APT repository
+        id: add_pkgs
+        run: |
+          # Configure GPG for batch/non-interactive signing
+          mkdir -p "$HOME/.gnupg"
+          echo "no-tty" >> "$HOME/.gnupg/gpg.conf"
+          echo "batch"  >> "$HOME/.gnupg/gpg.conf"
+          chmod 700 "$HOME/.gnupg"
+
+          ADDED=""
+          for deb in deb-files/*.deb; do
+            PKG=$(dpkg-deb -f "$deb" Package)
+            VER=$(dpkg-deb -f "$deb" Version)
+            echo "--- Processing $PKG $VER ($deb) ---"
+            # Debian policy: package name must match [a-z0-9][a-z0-9+-.]+
+            # Underscores are forbidden. Skip legacy assets that violate this.
+            if ! printf '%s' "$PKG" | grep -qE '^[a-z0-9][a-z0-9+.-]+$'; then
+              echo "::warning::Skipping $(basename $deb): package name '$PKG' contains forbidden characters (e.g. underscore). Delete this asset from the Release and re-run."
+              continue
+            fi
+            # Remove previous version of the same package before adding the new one
+            reprepro -b apt-repo remove stable "$PKG" 2>/dev/null || true
+            reprepro -b apt-repo includedeb stable "$deb"
+            ADDED="${ADDED}| \`${PKG}\` | \`${VER}\` | \`$(basename $deb)\` |\n"
+          done
+          echo "added_table=${ADDED}" >> "$GITHUB_OUTPUT"
+
+      - name: Export public GPG key for users
+        run: gpg --armor --export > apt-repo/KEY.gpg
+
+      - name: Commit and push apt-repo branch
+        id: commit
+        run: |
+          cd apt-repo
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --staged --quiet; then
+            echo "Repository content unchanged - nothing to commit."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "chore(apt): publish packages for ${{ steps.meta.outputs.tag }}"
+            git push origin apt-repo
+            echo "apt-repo branch updated."
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger pages rebuild to publish updated APT repo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pages.yml --repo ${{ github.repository }} --ref main
+          echo "Pages rebuild triggered."
+
+      - name: Write job summary
+        if: always()
+        run: |
+          ORG_REPO="${{ github.repository }}"
+          TAG="${{ steps.meta.outputs.tag }}"
+          PAGES_URL="https://$(echo $ORG_REPO | cut -d/ -f1).github.io/$(echo $ORG_REPO | cut -d/ -f2)"
+          APT_URL="${PAGES_URL}/apt"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << 'SUMMARY_EOF'
+          ## APT Repository Update
+          SUMMARY_EOF
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          Tag: \`${TAG}\`
+
+          | Item | Status |
+          |------|--------|
+          | Release tag | \`${TAG}\` |
+          | apt-repo branch pushed | ${{ steps.commit.outputs.pushed == 'true' && 'yes' || 'no change, skipped' }} |
+          | Pages rebuild triggered | yes |
+          | APT URL | \`${APT_URL}\` |
+
+          ### Packages added
+
+          | Package | Version | File |
+          |---------|---------|------|
+          ${{ steps.add_pkgs.outputs.added_table }}
+
+          ### User install commands
+          \`\`\`bash
+          curl -fsSL ${APT_URL}/KEY.gpg | sudo gpg --dearmor -o /usr/share/keyrings/fluxeem.gpg
+          echo "deb [signed-by=/usr/share/keyrings/fluxeem.gpg] ${APT_URL} stable main" | sudo tee /etc/apt/sources.list.d/fluxeem.list
+          sudo apt update && sudo apt install fluxeem-driver
+          \`\`\`
+          EOF

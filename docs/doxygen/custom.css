@@ -1,0 +1,81 @@
+:root {
+  --fluxeem-sidebar-width: 320px;
+  --fluxeem-topbar-height: 96px;
+}
+
+#top {
+  z-index: 1000;
+}
+
+#side-nav,
+#side-nav-resizable {
+  position: fixed !important;
+  top: calc(var(--fluxeem-topbar-height) - 1px) !important;
+  left: 0 !important;
+  bottom: 0 !important;
+  width: var(--fluxeem-sidebar-width) !important;
+  height: calc(100vh - var(--fluxeem-topbar-height)) !important;
+  overflow: hidden !important;
+  border-right: none !important;
+  background: #fff;
+  z-index: 900;
+}
+
+#nav-tree {
+  height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-bottom: 24px;
+}
+
+#doc-content,
+#MSearchResultsWindow {
+  margin-left: var(--fluxeem-sidebar-width) !important;
+}
+
+#splitbar {
+  position: fixed !important;
+  top: 0 !important;
+  left: var(--fluxeem-sidebar-width) !important;
+  bottom: 0 !important;
+  width: 1px !important;
+  height: 100vh !important;
+  border-left: none;
+  background: #d7dee9;
+  pointer-events: none !important;
+  z-index: 901;
+}
+
+#nav-tree,
+#nav-tree .label,
+#nav-tree .item {
+  font-size: 14px;
+}
+
+#nav-tree .label {
+  white-space: normal;
+  line-height: 1.45;
+}
+
+#nav-tree .children_ul {
+  margin-right: 8px;
+}
+
+.footer,
+#footer,
+footer,
+#nav-path,
+.navpath {
+  display: none !important;
+  border: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+@media screen and (max-width: 1024px) {
+  :root {
+    --fluxeem-sidebar-width: 280px;
+  }
+}
