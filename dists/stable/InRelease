@@ -1,0 +1,38 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: Fluxeem
+Label: Fluxeem Driver
+Codename: stable
+Date: Wed, 20 May 2026 02:52:47 UTC
+Architectures: amd64
+Components: main
+Description: Fluxeem event camera driver SDK - https://github.com/fluxeem/fluxeem_driver
+MD5Sum:
+ d24c69d184ba20c2808b96041e326a68 588 main/binary-amd64/Packages
+ 3a4604ca7387dfb387405d9b2fb9c7c2 401 main/binary-amd64/Packages.gz
+ dabb0fe966bb70b8e842959464b3bc96 163 main/binary-amd64/Release
+SHA1:
+ 9e18681984d8de0d937a911d6ae6fce582f79509 588 main/binary-amd64/Packages
+ 369f9469f68c90b46696f98dee463d319c37a01a 401 main/binary-amd64/Packages.gz
+ cf888bdbe6b1598dd8629a8563f882c0b3ecd9ce 163 main/binary-amd64/Release
+SHA256:
+ c3593e463685f3168e773101c2f6b52956902c1a69e1a5d32ff96052fef05c7e 588 main/binary-amd64/Packages
+ 6792718ac6a015d2b2e8e8ab699766fbf0ba5fbf2a232f52b8c2f2e48e4c30c1 401 main/binary-amd64/Packages.gz
+ 5e6419388791f9b0f90f1602623029cb16a36338db3e6a7695158e20514784ee 163 main/binary-amd64/Release
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEESWlghV4/BLmeur3k4NNhe8q/828FAmoNIf8ACgkQ4NNhe8q/
+8287hRAAtDrhwu30fmTtZ1TkYHUlyz/TQGP0JN83kCZ2NrHwPuNCIYv2EMxkwbtQ
+UHWunZ7c0myM3EwJBAMuP4mGMkDLR1p+rgNqjcE7juHaDN2R/jCABjSPYlLFnY2V
+IeQrObnIj5PBPr88flL/GlNFKhgpVkwQoaW7jFuTzfOYH1dLrIrobrEvw7KtJ80v
+cCcjAnUzC1MbfLNTr8pmXyYQdOsM2YNFPM28Dou9plw5x8yWqECL1pehLPb3Wr31
+IhC0rZn77/qQbGxgE3fYVnLe9GmYtEIe2/HqN0MBZO5SPxSDtrkM79VjU8fNSprB
+f2XyTlnNkrzLXDZvD1w02FZZVjFfl6SVhBncxErwiOfIoOyQgYRlvTrRLd+oYUYG
+BcRBqLFd9X75E6mJb51hCoiYN4kaYN6CWaHymP3CgYaBMKu5RFA4FmDv3yj16+ET
+FeBq4Mc/LIs43cOyq2a9ftu9VPLKyAIr1p7+MBx7ikc7xk6YZZNbSW4NtK7EEzrw
+OCGnm+xElg8a5fBq2dQH26ibKQFO/FpceNqB/W48p0J5kX+n6XipqNmKuf5cVuqf
+tjh7MBE0s+vrS9dYctWmEa9j8S76wPjFR1460tT6lm7RVYOXrnt8qISCcjQUpw2N
+rmsdph1s4q06cEjccQZzZHK6QeMmJWLLbs2vTj96nFgy7muzNrU=
+=Bwrw
+-----END PGP SIGNATURE-----

@@ -1,0 +1,5 @@
+Component: main
+Origin: Fluxeem
+Label: Fluxeem Driver
+Architecture: amd64
+Description: Fluxeem event camera driver SDK - https://github.com/fluxeem/fluxeem_driver
