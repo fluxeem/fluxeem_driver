@@ -1,0 +1,7 @@
+Origin: Fluxeem
+Label: Fluxeem Driver
+Codename: stable
+Architectures: amd64
+Components: main
+Description: Fluxeem event camera driver SDK - https://github.com/fluxeem/fluxeem_driver
+SignWith: 496960855E3F04B99EBABDE4E0D3617BCABFF36F
