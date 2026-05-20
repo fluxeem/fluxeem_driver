@@ -1,19 +1,19 @@
 Origin: Fluxeem
 Label: Fluxeem Driver
 Codename: stable
-Date: Wed, 20 May 2026 02:52:47 UTC
+Date: Wed, 20 May 2026 07:23:23 UTC
 Architectures: amd64
 Components: main
 Description: Fluxeem event camera driver SDK - https://github.com/fluxeem/fluxeem_driver
 MD5Sum:
- d24c69d184ba20c2808b96041e326a68 588 main/binary-amd64/Packages
- 3a4604ca7387dfb387405d9b2fb9c7c2 401 main/binary-amd64/Packages.gz
+ 626b3e51029c17c4d9a12a461d2d0448 602 main/binary-amd64/Packages
+ 97c97458a6d07f2ad6dd2f2830b9f1b3 408 main/binary-amd64/Packages.gz
  dabb0fe966bb70b8e842959464b3bc96 163 main/binary-amd64/Release
 SHA1:
- 9e18681984d8de0d937a911d6ae6fce582f79509 588 main/binary-amd64/Packages
- 369f9469f68c90b46696f98dee463d319c37a01a 401 main/binary-amd64/Packages.gz
+ 9ecad5955406a9a3c1bd6b3af4fa6d777575519f 602 main/binary-amd64/Packages
+ 92cb84673389fa5deafe43c35dd6e073eaa54fd5 408 main/binary-amd64/Packages.gz
  cf888bdbe6b1598dd8629a8563f882c0b3ecd9ce 163 main/binary-amd64/Release
 SHA256:
- c3593e463685f3168e773101c2f6b52956902c1a69e1a5d32ff96052fef05c7e 588 main/binary-amd64/Packages
- 6792718ac6a015d2b2e8e8ab699766fbf0ba5fbf2a232f52b8c2f2e48e4c30c1 401 main/binary-amd64/Packages.gz
+ bc413355c0bbf95350e67c21723fa8cdbca7e81c4b88f38b3880fe8508f380fc 602 main/binary-amd64/Packages
+ 696e0474b7640f79ba958d5c6e4ff1410c98d10cf0dcd443c24ce5a9775adcce 408 main/binary-amd64/Packages.gz
  5e6419388791f9b0f90f1602623029cb16a36338db3e6a7695158e20514784ee 163 main/binary-amd64/Release

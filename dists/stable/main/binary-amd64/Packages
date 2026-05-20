@@ -4,14 +4,14 @@ Depends: libusb-1.0-0 (>= 1.0.23)
 Priority: optional
 Section: libs
 Filename: pool/main/f/fluxeem-driver/fluxeem-driver_1.0.1_amd64.deb
-Size: 826470
-SHA256: 717e26441f71320087ca746d71c712ce2dba7894ecbdecc6fbf594a3cdc4fa3c
-SHA1: 4e2a9d37cb455ce1cf13196e180c329d247abc26
-MD5sum: d0281a9f986b0053bbbad029c82ae092
-Description: Fluxeem event camera driver library.
- Fluxeem Driver - Event camera driver library.
- ; Provides shared library, headers, and sample applications.
+Size: 812574
+SHA256: abf116f0a1b29b3467f98e11fdd4babb0c935b645628ba8455d385dc8653120b
+SHA1: e9b06b877839d331dab286ec2759d1ece39183c5
+MD5sum: d577b092f63ebc3cc7758201f661d76e
+Description: Fluxeem Driver - Event Camera Driver and SDK.
+ Fluxeem Driver - Event Camera Driver and SDK.
+ ; Provides shared libraries, public headers, and sample programs.
 Maintainer: Fluxeem <info@fluxeem.com>
 Version: 1.0.1
-Installed-Size: 3270
+Installed-Size: 3241
 
